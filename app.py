@@ -5,6 +5,7 @@ from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, func
 import numpy as np
+import pandas as pd
 import datetime as dt
 
 # Database Setup
@@ -28,10 +29,14 @@ def home():
     precip = "/api/v1.0/precipitation"
     stations = "/api/v1.0/stations"
     tobs = "/api/v1.0/tobs"
+    start = "/api/v1.0/start"
+    start_end = "/api/v1.0/start/end"
 
     return (f"Precipiation Route: {precip}<br/>"
         f"Station Route: {stations}<br/>"
-        f"Temperature Data: {tobs}<br/>")
+        f"Temperature Data: {tobs}<br/>"
+        f"Start: {start}<br/>"
+        f"Start/End: {start_end}<br/>")
 
 @app.route("/about")
 def about():
@@ -70,17 +75,16 @@ def stations():
     session = Session(engine)
     
     # Query number of stations
-    stations_data = session.query(measurements.station).distinct().all()[0]
+    stations_data = session.query(measurements.station).distinct().all()
 
     # Close Session
     session.close()
 
-    stations_list = []
-    for station in stations_data:
-        stations_list.append(station)
+    # Transform the data into a structure than can be jsonified
+    stations_list = list(np.ravel(stations_data))
 
     # Return number of stations
-    return jsonify(f"{stations_list}")
+    return jsonify(stations_list)
 
 @app.route("/api/v1.0/tobs")
 def tobs():
@@ -91,7 +95,7 @@ def tobs():
     latest_date = dt.date(2017,8,23)
     year_ago = dt.date(2017,8,23) - dt.timedelta(days=365)
 
-    station_temp_data = session.query(measurements.date, measurements.tobs).\
+    station_temp_data = session.query(measurements.tobs).\
                         filter(measurements.date >= year_ago).\
                         filter(measurements.station == 'USC00519281').\
                         order_by(measurements.date.desc()).all()
@@ -99,7 +103,78 @@ def tobs():
     # Close Session
     session.close()
 
-    return jsonify(f"{station_temp_data}")
+    # Transform the data into a structure than can be jsonified
+    station_temp_list = list(np.ravel(station_temp_data))
+
+    return jsonify(station_temp_list)
+
+@app.route("/api/v1.0/start")
+def start():
+
+        # Create session from Python to the DB
+    session = Session(engine)
+    
+    station_frequency = session.query(measurements.station, func.count(measurements.station)).\
+    group_by(measurements.station).\
+    order_by(func.count(measurements.station).desc()).all()
+    station_frequency_df = pd.DataFrame(station_frequency,columns=['Station','Frequency'])
+
+    most_frequent_station = station_frequency_df['Station'][0]
+    start_date =  dt.date(2014,8,23)
+
+    Tmin = session.query(func.min(measurements.tobs)).\
+                    filter(measurements.date >= start_date).\
+                    filter(measurements.station == most_frequent_station).all()[0]
+
+    Tmax = session.query(func.max(measurements.tobs)).\
+                    filter(measurements.date >= start_date).\
+                    filter(measurements.station == most_frequent_station).all()[0]
+                    
+    Tavg = session.query(func.avg(measurements.tobs)).\
+                    filter(measurements.date >= start_date).\
+                    filter(measurements.station == most_frequent_station).all()[0]
+
+    # Close Session
+    session.close()
+
+    temps_list = list(np.ravel([Tmin,Tmax,Tavg]))
+    return jsonify(temps_list)
+    return
+
+@app.route("/api/v1.0/start/end")
+def start_end():
+    # Create session from Python to the DB
+    session = Session(engine)
+    
+    station_frequency = session.query(measurements.station, func.count(measurements.station)).\
+    group_by(measurements.station).\
+    order_by(func.count(measurements.station).desc()).all()
+    station_frequency_df = pd.DataFrame(station_frequency,columns=['Station','Frequency'])
+
+    most_frequent_station = station_frequency_df['Station'][0]
+    start_date =  dt.date(2016,8,23)
+    end_date = dt.date(2017,8,23)
+
+    Tmin = session.query(func.min(measurements.tobs)).\
+                    filter(measurements.date >= start_date).\
+                    filter(measurements.date <= end_date).\
+                    filter(measurements.station == most_frequent_station).all()[0]
+
+    Tmax = session.query(func.max(measurements.tobs)).\
+                    filter(measurements.date >= start_date).\
+                    filter(measurements.date <= end_date).\
+                    filter(measurements.station == most_frequent_station).all()[0]
+                    
+    Tavg = session.query(func.avg(measurements.tobs)).\
+                    filter(measurements.date >= start_date).\
+                    filter(measurements.date <= end_date).\
+                    filter(measurements.station == most_frequent_station).all()[0]
+
+    # Close Session
+    session.close()
+
+    temps_list = list(np.ravel([Tmin,Tmax,Tavg]))
+    return jsonify(temps_list)
 
 if __name__ == "__main__":
     app.run(debug=True)
