@@ -47,7 +47,6 @@ def precipitation():
     latest_date = session.query(measurements.date).order_by(measurements.date.desc()).first()
     latest_date = dt.date(2017,8,23)
     year_ago = dt.date(2017,8,23) - dt.timedelta(days=365)
-
     results = session.query(measurements.date, measurements.prcp).\
     filter(measurements.date >= year_ago).\
     order_by(measurements.date.desc()).all()
@@ -55,22 +54,52 @@ def precipitation():
     # Close Session
     session.close()
 
-    # Place data into dictionary
+    # Place data into dictionary in format {"date string": precipitation float}
     all_prcp_data = []
     for date, prcp in results:
         prcp_dict = {}
         prcp_dict[date] = prcp
         all_prcp_data.append(prcp_dict)
-        
+    
+    # Return JSONified list of dictionaries
     return jsonify(all_prcp_data)
 
 @app.route("/api/v1.0/stations")
 def stations():
-    return "Stations"
+    # Create session from Python to the DB
+    session = Session(engine)
+    
+    # Query number of stations
+    stations_data = session.query(measurements.station).distinct().all()[0]
+
+    # Close Session
+    session.close()
+
+    stations_list = []
+    for station in stations_data:
+        stations_list.append(station)
+
+    # Return number of stations
+    return jsonify(f"{stations_list}")
 
 @app.route("/api/v1.0/tobs")
 def tobs():
-    return "Tobs"
+    # Create session from Python to the DB
+    session = Session(engine)
+
+    # Pull temperature observations from the last year at Station USC00519281
+    latest_date = dt.date(2017,8,23)
+    year_ago = dt.date(2017,8,23) - dt.timedelta(days=365)
+
+    station_temp_data = session.query(measurements.date, measurements.tobs).\
+                        filter(measurements.date >= year_ago).\
+                        filter(measurements.station == 'USC00519281').\
+                        order_by(measurements.date.desc()).all()
+
+    # Close Session
+    session.close()
+
+    return jsonify(f"{station_temp_data}")
 
 if __name__ == "__main__":
     app.run(debug=True)
